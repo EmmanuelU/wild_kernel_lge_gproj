@@ -1,5 +1,5 @@
 #!/bin/sh
-#DO NOT EDIT FILE - AUTO GENERATED FOR e980
+#DO NOT EDIT FILE - AUTO GENERATED FOR e98x
 latestversion=001
 latestdate=150316
 latestdateliteral='March 16 2015'

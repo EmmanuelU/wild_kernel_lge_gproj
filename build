@@ -7,7 +7,7 @@ dynamic=
 upload=
 
 kernelversion=001
-device="e980"
+device="e98x"
 defconfig="wild_defconfig"
 ramdisk="5.0"
 dynamic_ramdisk_override="5.0_override"

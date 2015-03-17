@@ -83,4 +83,6 @@ GTAGS
 
 *.orig
 *~
+build_log.txt
+*.zip
 \#*#
