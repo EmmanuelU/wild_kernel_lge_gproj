@@ -2,6 +2,7 @@
  * LP5521 LED chip driver.
  *
  * Copyright (C) 2010 Nokia Corporation
+ * Copyright (C) 2015, Emmanuel Utomi <emmanuelutomi@gmail.com>
  *
  * Contact: Samu Onkalo <samu.p.onkalo@nokia.com>
  *
@@ -115,6 +116,8 @@
 #define CMD_WAIT_LSB			0x00
 
 #define MAX_BLINK_TIME			60000	/* 60 sec */
+
+unsigned int blink_interval_on, blink_interval_off;
 
 enum lp5521_wait_type {
 	LP5521_CYCLE_INVALID,
@@ -605,7 +608,6 @@ static ssize_t store_current(struct device *dev,
 
 	led->led_current = (u8)curr;
 	LP5521_INFO_MSG("[%s] brightness : %d", __func__, (u8)curr);
-
 	return len;
 }
 
@@ -732,18 +734,14 @@ static u8 get_led_current_value(u8 current_index)
 	return current_index_mapped_value[current_index];
 }
 
-static ssize_t show_led_pattern(struct device *dev,
-			    struct device_attribute *attr,
-			    char *buf)
+static ssize_t show_led_pattern(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct lp5521_chip *chip = i2c_get_clientdata(to_i2c_client(dev));
 
 	return sprintf(buf, "%d\n", chip->id_pattern_play);
 }
 
-static ssize_t store_led_pattern(struct device *dev,
-				struct device_attribute *attr,
-				const char *buf, size_t len)
+static ssize_t store_led_pattern(struct device *dev, struct device_attribute *attr, const char *buf, size_t len)
 {
 	struct lp5521_chip *chip = i2c_get_clientdata(to_i2c_client(dev));
 	unsigned long val;
@@ -756,6 +754,26 @@ static ssize_t store_led_pattern(struct device *dev,
 
 	lp5521_run_led_pattern(val, chip);
 
+	return len;
+}
+
+static ssize_t show_blink_interval(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf,"%u %u\n", blink_interval_on, blink_interval_off);
+}
+
+static ssize_t store_blink_interval(struct device *dev, struct device_attribute *attr, const char *buf, size_t len)
+{
+	unsigned int on_ms, off_ms;
+
+	int ret = sscanf(buf, "%u %u\n", &on_ms, &off_ms);
+	if ((ret == 1 || ret == 2) && on_ms && off_ms) {
+		blink_interval_on = on_ms;
+		blink_interval_off = off_ms;
+	} else {
+		blink_interval_on = 0;
+		blink_interval_off = 0;
+	}
 	return len;
 }
 
@@ -899,8 +917,13 @@ static ssize_t store_led_blink(struct device *dev,
 	LP5521_INFO_MSG("[%s] rgb=0x%06x, on=%d, off=%d\n",__func__, rgb, on, off);
 	lp5521_run_led_pattern(PATTERN_OFF, chip);
 
-	on = min_t(unsigned int, on, MAX_BLINK_TIME);
-	off = min_t(unsigned int, off, MAX_BLINK_TIME);
+	if(blink_interval_on && blink_interval_off){
+		on = blink_interval_on;
+		off = blink_interval_off;
+	} else {
+		on = min_t(unsigned int, on, MAX_BLINK_TIME);
+		off = min_t(unsigned int, off, MAX_BLINK_TIME);
+	}
 
 	if (!rgb || !on || !off) {
 		chip->id_pattern_play = PATTERN_OFF;
@@ -960,6 +983,7 @@ static DEVICE_ATTR(selftest, S_IRUGO, lp5521_selftest, NULL);
 static DEVICE_ATTR(led_pattern, S_IRUGO | S_IWUSR, show_led_pattern, store_led_pattern);
 static DEVICE_ATTR(led_blink, S_IRUGO | S_IWUSR, NULL, store_led_blink);
 static DEVICE_ATTR(led_current_index, S_IRUGO | S_IWUSR, show_led_current_index, store_led_current_index);
+static DEVICE_ATTR(led_blink_interval, S_IRUGO | S_IWUSR, show_blink_interval, store_blink_interval);
 
 static struct attribute *lp5521_attributes[] = {
 	&dev_attr_engine1_mode.attr,
@@ -972,6 +996,7 @@ static struct attribute *lp5521_attributes[] = {
 	&dev_attr_led_pattern.attr,
 	&dev_attr_led_blink.attr,
 	&dev_attr_led_current_index.attr,
+	&dev_attr_led_blink_interval.attr,
 	NULL
 };
 
