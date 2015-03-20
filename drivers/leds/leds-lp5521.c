@@ -117,7 +117,7 @@
 
 #define MAX_BLINK_TIME			60000	/* 60 sec */
 
-unsigned int blink_interval_on, blink_interval_off;
+unsigned int blink_interval_on, blink_interval_off, blink_interval_rgb;
 
 enum lp5521_wait_type {
 	LP5521_CYCLE_INVALID,
@@ -767,13 +767,28 @@ static ssize_t store_blink_interval(struct device *dev, struct device_attribute 
 	unsigned int on_ms, off_ms;
 
 	int ret = sscanf(buf, "%u %u\n", &on_ms, &off_ms);
-	if ((ret == 1 || ret == 2) && on_ms && off_ms) {
+	if ((ret == 2) && on_ms && off_ms) {
 		blink_interval_on = on_ms;
 		blink_interval_off = off_ms;
 	} else {
 		blink_interval_on = 0;
 		blink_interval_off = 0;
 	}
+	return len;
+}
+
+static ssize_t show_blink_rgb(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf,"%x\n", blink_interval_rgb);
+}
+
+static ssize_t store_blink_rgb(struct device *dev, struct device_attribute *attr, const char *buf, size_t len)
+{
+	unsigned int rgb;
+	int ret = sscanf(buf, "%x", &rgb);
+	if(ret == 1) blink_interval_rgb = rgb;
+	else blink_interval_rgb = 0;
+		
 	return len;
 }
 
@@ -917,18 +932,19 @@ static ssize_t store_led_blink(struct device *dev,
 	LP5521_INFO_MSG("[%s] rgb=0x%06x, on=%d, off=%d\n",__func__, rgb, on, off);
 	lp5521_run_led_pattern(PATTERN_OFF, chip);
 
-	if(blink_interval_on && blink_interval_off){
-		on = blink_interval_on;
-		off = blink_interval_off;
-	} else {
-		on = min_t(unsigned int, on, MAX_BLINK_TIME);
-		off = min_t(unsigned int, off, MAX_BLINK_TIME);
-	}
-
+	on = min_t(unsigned int, on, MAX_BLINK_TIME);
+	off = min_t(unsigned int, off, MAX_BLINK_TIME);
+	
+	
 	if (!rgb || !on || !off) {
 		chip->id_pattern_play = PATTERN_OFF;
 		return len;
 	} else {
+		if(blink_interval_on && blink_interval_off){
+			on = blink_interval_on;
+			off = blink_interval_off;
+		}
+		if(blink_interval_rgb) rgb = blink_interval_rgb;
 		chip->id_pattern_play = PATTERN_BLINK_ON;
 	}
 
@@ -984,6 +1000,8 @@ static DEVICE_ATTR(led_pattern, S_IRUGO | S_IWUSR, show_led_pattern, store_led_p
 static DEVICE_ATTR(led_blink, S_IRUGO | S_IWUSR, NULL, store_led_blink);
 static DEVICE_ATTR(led_current_index, S_IRUGO | S_IWUSR, show_led_current_index, store_led_current_index);
 static DEVICE_ATTR(led_blink_interval, S_IRUGO | S_IWUSR, show_blink_interval, store_blink_interval);
+static DEVICE_ATTR(led_blink_rgb, S_IRUGO | S_IWUSR, show_blink_rgb, store_blink_rgb);
+
 
 static struct attribute *lp5521_attributes[] = {
 	&dev_attr_engine1_mode.attr,
@@ -997,6 +1015,7 @@ static struct attribute *lp5521_attributes[] = {
 	&dev_attr_led_blink.attr,
 	&dev_attr_led_current_index.attr,
 	&dev_attr_led_blink_interval.attr,
+	&dev_attr_led_blink_rgb.attr,
 	NULL
 };
 
