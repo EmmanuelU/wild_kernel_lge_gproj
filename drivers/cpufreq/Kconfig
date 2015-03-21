@@ -41,6 +41,12 @@ config CPU_FREQ_STAT_DETAILS
 	  system.
 
 	  If in doubt, say N.
+	  
+config CPU_FREQ_RETAIN_POLICY
+	bool "Retain CPU Policy."
+	default n
+	help
+	  Retain individual CPU policies after hotplug.
 
 choice
 	prompt "Default CPUFreq governor"
