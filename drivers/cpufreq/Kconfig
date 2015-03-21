@@ -227,5 +227,11 @@ depends on PPC32 || PPC64
 source "drivers/cpufreq/Kconfig.powerpc"
 endmenu
 
+config CPU_FREQ_RETAIN_POLICY
+	bool "Retain CPU Policy."
+	default n
+	help
+	  Retain individual CPU policies after hotplug.
+
 endif
 endmenu
