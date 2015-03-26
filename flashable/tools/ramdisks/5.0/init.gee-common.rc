@@ -384,8 +384,8 @@ service charger /sbin/healthd -c
 service sdcard /system/bin/sdcard -u 1023 -g 1023 -l /data/media /mnt/shell/emulated
     class late_start
 
-service thermald /system/bin/thermald
-    class main
+#service thermald /system/bin/thermald
+#    class main
 
 service mpdecision /system/bin/mpdecision --no_sleep --avg_comp
     class main
