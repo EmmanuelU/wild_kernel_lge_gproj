@@ -111,7 +111,7 @@ rm -rf arch/arm/boot/zImage
 rm -rf flashable/zip/tools/zImage
 if [[ "$fixed" == "false" ]]; then
 if [[ "$clean" == "true" ]]; then
-make clean $buildargs | tee build_log.txt
+make mrproper $buildargs | tee build_log.txt
 fi
 echo >> build_log.txt
 echo Writing configs ...
