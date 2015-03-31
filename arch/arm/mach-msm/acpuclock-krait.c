@@ -48,6 +48,9 @@
 #define PRI_SRC_SEL_HFPLL	1
 #define PRI_SRC_SEL_HFPLL_DIV2	2
 
+#define HFPLL_MIN_VDD		 700000
+#define HFPLL_MAX_VDD		1300000
+
 #define SECCLKAGD		BIT(4)
 
 int g_speed_bin;
@@ -872,6 +875,48 @@ static void __init bus_init(const struct l2_level *l2_level)
 	if (ret)
 		dev_err(drv.dev, "initial bandwidth req failed (%d)\n", ret);
 }
+
+#ifdef CONFIG_VDD_USERSPACE
+
+ssize_t acpuclk_get_vdd_levels_str(char *buf) {
+
+	int i, len = 0;
+
+	if (buf) {
+		mutex_lock(&driver_lock);
+
+		for (i = 0; drv.acpu_freq_tbl[i].speed.khz; i++) {
+			len += sprintf(buf + len, "%8lu: %8d\n", drv.acpu_freq_tbl[i].speed.khz,
+				drv.acpu_freq_tbl[i].vdd_core );
+		}
+
+		mutex_unlock(&driver_lock);
+	}
+	return len;
+}
+
+void acpuclk_set_vdd(unsigned int khz, int vdd_uv) {
+
+	int i;
+	unsigned int new_vdd_uv;
+
+	mutex_lock(&driver_lock);
+
+	for (i = 0; drv.acpu_freq_tbl[i].speed.khz; i++) {
+		if (khz == 0)
+			new_vdd_uv = min(max((unsigned int)(drv.acpu_freq_tbl[i].vdd_core + vdd_uv),
+				(unsigned int)HFPLL_MIN_VDD), (unsigned int)HFPLL_MAX_VDD);
+		else if ( drv.acpu_freq_tbl[i].speed.khz == khz)
+			new_vdd_uv = min(max((unsigned int)vdd_uv,
+				(unsigned int)HFPLL_MIN_VDD), (unsigned int)HFPLL_MAX_VDD);
+		else 
+			continue;
+
+		drv.acpu_freq_tbl[i].vdd_core = new_vdd_uv;
+	}
+	mutex_unlock(&driver_lock);
+}
+#endif	/* CONFIG_VDD_USERSPACE */
 
 #ifdef CONFIG_CPU_FREQ_MSM
 static struct cpufreq_frequency_table freq_table[NR_CPUS][35];

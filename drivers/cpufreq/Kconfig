@@ -238,5 +238,12 @@ config CPU_FREQ_RETAIN_POLICY
 	help
 	  Retain individual CPU policies after hotplug.
 
+config VDD_USERSPACE
+	bool "VDD sysfs interface"
+	default n
+	 depends on CPU_FREQ_STAT
+	help
+	Allows live editting of voltage table through userspace.
+
 endif
 endmenu
