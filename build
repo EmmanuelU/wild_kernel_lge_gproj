@@ -6,7 +6,7 @@ fixed=
 dynamic=
 upload=
 
-kernelversion=001
+kernelversion=1
 device="e98x"
 defconfig="wild_defconfig"
 ramdisk="5.0"
