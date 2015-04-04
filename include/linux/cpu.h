@@ -42,6 +42,11 @@ extern int sched_create_sysfs_power_savings_entries(struct device *dev);
 extern void unregister_cpu(struct cpu *cpu);
 extern ssize_t arch_cpu_probe(const char *, size_t);
 extern ssize_t arch_cpu_release(const char *, size_t);
+
+#ifdef CONFIG_CPU_TOGGLE
+extern bool cpu_enabled(unsigned int cpu);
+#endif
+
 #endif
 struct notifier_block;
 
