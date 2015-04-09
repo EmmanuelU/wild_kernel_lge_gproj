@@ -10,5 +10,4 @@ mkdir -p $C
 dd if=/dev/block/platform/msm_sdcc.1/by-name/aboot of=$C/aboot.img
 /tmp/loki/loki_tool patch boot $C/aboot.img /tmp/boot.img $C/boot.lok || exit 1
 /tmp/loki/loki_tool flash boot $C/boot.lok || exit 1
-rm -rf $C
 exit 0

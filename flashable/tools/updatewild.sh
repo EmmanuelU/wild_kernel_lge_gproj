@@ -1,8 +1,8 @@
 #!/bin/sh
 #DO NOT EDIT FILE - AUTO GENERATED FOR e98x
 latestversion=1
-latestdate=150406
-latestdateliteral='April 06 2015'
+latestdate=150408
+latestdateliteral='April 08 2015'
 latestDL=http://forum.xda-developers.com/showthread.php?t=2765196
 input="$1"
 if [[ -z "$input" ]]
