@@ -6,7 +6,7 @@ fixed=
 dynamic=
 upload=
 
-kernelversion=1
+kernelversion=2
 device="e98x"
 defconfig="wild_defconfig"
 ramdisk="5.0"
@@ -14,7 +14,7 @@ dynamic_ramdisk_override="5.0_override"
 outdir="/external_SD/workspace/E980"
 #outdir="/storage/sdcard1/workspace/E980"
 outfile=WildKernel_signed.zip
-OTALink="http://forum.xda-developers.com/showthread.php?t=2765196"
+OTALink="http://forum.xda-developers.com/optimus-g-pro/orig-development/kernel-wildkernel-build-1-featurlicous-t3069629"
 outdate=$(date +%y%m%d)
 outdateliteral=$(date "+%B %d %Y")
 outdateliteral="'${outdateliteral}'"
