@@ -82,6 +82,7 @@ GSYMS
 GTAGS
 
 *.orig
+zImage
 *~
 zImage
 build_log.txt
