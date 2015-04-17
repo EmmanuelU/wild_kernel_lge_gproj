@@ -55,6 +55,11 @@ snd-soc-wcd9310-objs := wcd9310_es325.o wcd9310-tables.o
 else
 snd-soc-wcd9310-objs := wcd9310.o wcd9310-tables.o
 endif
+
+obj-$(CONFIG_SOUND_CONTROL_HAX_GPL) += sound_control_gpl.o
+obj-$(CONFIG_SOUND_CONTROL_HAX_3_GPL) += sound_control_3_gpl.o
+
+
 #// ]]LGE_BSP_AUDIO, jeremy.pi@lge.com, Audience eS325 ALSA SoC Audio driver
 snd-soc-cs8427-objs := cs8427.o
 snd-soc-wcd9320-objs := wcd9320.o wcd9320-tables.o
