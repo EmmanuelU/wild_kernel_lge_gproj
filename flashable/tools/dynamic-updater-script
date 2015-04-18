@@ -28,7 +28,6 @@ mount("ext4", "EMMC", "/dev/block/platform/msm_sdcc.1/by-name/system", "/system"
 ui_print(" ");
 ui_print("-- For Android Version: " + file_getprop("/system/build.prop", "ro.build.version.release"));
 ui_print(" ");
-ui_print(" ");
 show_progress(0.250000, 0);
 ui_print("-- Generating Kernel:");
 ui_print(" ");
