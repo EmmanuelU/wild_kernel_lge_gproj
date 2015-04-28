@@ -77,9 +77,11 @@ static bool exec_count = true;
 bool scr_suspended;
 bool dt2w_suspend_enter;
 cputime64_t dt2w_suspend_exit_time;
+bool dt2w_suspend_calulated;
 EXPORT_SYMBOL(scr_suspended);
 EXPORT_SYMBOL(dt2w_suspend_enter);
 EXPORT_SYMBOL(dt2w_suspend_exit_time);
+EXPORT_SYMBOL(dt2w_suspend_calulated);
 
 /* // To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
 #ifndef CONFIG_HAS_EARLYSUSPEND
@@ -155,29 +157,25 @@ static void new_touch(int x, int y) {
 }
 
 /* Doubletap2wake main function */
-static void detect_doubletap2wake(int x, int y, bool st)
+static void detect_doubletap2wake(int x, int y)
 {
-        bool single_touch = st;
 #if DT2W_DEBUG
-        pr_info(LOGTAG"x,y(%4d,%4d) single:%s\n",
-                x, y, (single_touch) ? "true" : "false");
+        pr_info(LOGTAG"x,y(%4d,%4d)\n", x, y);
 #endif
-	if ((single_touch) && (dt2w_switch > 0) && (exec_count) && (touch_cnt)) {
+	if ((dt2w_switch > 0) && (exec_count) && (touch_cnt)) {
 		touch_cnt = false;
 		// Make enable to set touch counts (Max : 10) - by jollaman999
 		if (touch_nr == dt2w_switch - 1) {
 			new_touch(x, y);
 			// To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
-			if(dt2w_suspend_enter) {
-#if DT2W_DEBUG
-				pr_info("[jolla-dt2w_debug] doubletap2wake 3 taps solution time check = %lld\n",
-					(ktime_to_ms(ktime_get())-dt2w_suspend_exit_time));
-#endif
+			if (dt2w_suspend_enter && !dt2w_suspend_calulated) {
 				// Make enable to set touch counts (Max : 10) - by jollaman999
-				if((ktime_to_ms(ktime_get())-dt2w_suspend_exit_time) < (DT2W_TIME/2*(dt2w_switch+1))) {
+				if ((ktime_to_ms(ktime_get()) - dt2w_suspend_exit_time) < (DT2W_TIME/2*(dt2w_switch+1))) {
 					touch_nr++;
+					dt2w_suspend_calulated = true;
 #if DT2W_DEBUG
-					pr_info("[jolla-dt2w_debug] touch_nr++ by doubletap2wake 3 taps solution\n");
+					pr_info("[jolla-dt2w_debug] touch_nr++ from dt2w suspend enter!!\n");
+					pr_info("[jolla-dt2w_debug] touch_nr = %d\n", touch_nr);
 #endif
 				}
 			}
@@ -186,10 +184,10 @@ static void detect_doubletap2wake(int x, int y, bool st)
 			if ((calc_feather(x, x_pre) < DT2W_FEATHER) &&
 			    (calc_feather(y, y_pre) < DT2W_FEATHER) &&
 			    // Make enable to set touch counts (Max : 10) - by jollaman999
-			    ((ktime_to_ms(ktime_get())-tap_time_pre) < (DT2W_TIME/2*(dt2w_switch+1)))) {
+			    ((ktime_to_ms(ktime_get()) - tap_time_pre) < (DT2W_TIME/2*(dt2w_switch+1)))) {
 				touch_nr++;
 #if DT2W_DEBUG
-				pr_info("[jolla-dt2w_debug] touch_nr++\n");
+				pr_info("[jolla-dt2w_debug] touch_nr++ from dt2w suspend exit!!\n");
 				pr_info("[jolla-dt2w_debug] touch_nr = %d\n", touch_nr);
 #endif
 			} else {
@@ -214,11 +212,12 @@ static void detect_doubletap2wake(int x, int y, bool st)
 	}
 	// To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
 	dt2w_suspend_enter = false;
+	dt2w_suspend_calulated = false;
 }
 
 static void dt2w_input_callback(struct work_struct *unused) {
 
-	detect_doubletap2wake(touch_x, touch_y, true);
+	detect_doubletap2wake(touch_x, touch_y);
 
 	return;
 }
