@@ -74,10 +74,10 @@ static bool touch_x_called = false, touch_y_called = false, touch_cnt = true;
 static bool exec_count = true;
 
 // To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
-bool scr_suspended;
-bool dt2w_suspend_enter;
-cputime64_t dt2w_suspend_exit_time;
-bool dt2w_suspend_calulated;
+bool scr_suspended = false;
+bool dt2w_suspend_enter = false;
+cputime64_t dt2w_suspend_exit_time = 0;
+bool dt2w_suspend_calulated = false;
 EXPORT_SYMBOL(scr_suspended);
 EXPORT_SYMBOL(dt2w_suspend_enter);
 EXPORT_SYMBOL(dt2w_suspend_exit_time);
