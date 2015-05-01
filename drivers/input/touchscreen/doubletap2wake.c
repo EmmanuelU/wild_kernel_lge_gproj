@@ -168,11 +168,10 @@ static void detect_doubletap2wake(int x, int y)
 		if (touch_nr == dt2w_switch - 1) {
 			new_touch(x, y);
 			// To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
-			if (dt2w_suspend_enter && !dt2w_suspend_calulated) {
+			if (dt2w_suspend_enter && dt2w_suspend_calulated) {
 				// Make enable to set touch counts (Max : 10) - by jollaman999
 				if ((ktime_to_ms(ktime_get()) - dt2w_suspend_exit_time) < (DT2W_TIME/2*(dt2w_switch+1))) {
 					touch_nr++;
-					dt2w_suspend_calulated = true;
 #if DT2W_DEBUG
 					pr_info("[jolla-dt2w_debug] touch_nr++ from dt2w suspend enter!!\n");
 					pr_info("[jolla-dt2w_debug] touch_nr = %d\n", touch_nr);

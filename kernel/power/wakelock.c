@@ -419,8 +419,10 @@ static void suspend(struct work_struct *work)
 			tm.tm_hour, tm.tm_min, tm.tm_sec, ts_exit.tv_nsec);
 			// To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
 #ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-			if (!dt2w_suspend_calulated)
+			if (!dt2w_suspend_calulated) {
 				dt2w_suspend_exit_time = ktime_to_ms(ktime_get());
+				dt2w_suspend_calulated = true;
+			}
 #endif
 	}
 
