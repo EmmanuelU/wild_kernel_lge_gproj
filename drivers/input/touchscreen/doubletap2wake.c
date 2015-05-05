@@ -29,13 +29,13 @@
 #include <linux/slab.h>
 #include <linux/workqueue.h>
 #include <linux/input.h>
-/*
+
 #ifndef CONFIG_HAS_EARLYSUSPEND
 #include <linux/lcd_notify.h>
 #else
 #include <linux/earlysuspend.h>
 #endif
-*/
+
 #include <linux/hrtimer.h>
 #include <asm-generic/cputime.h>
 
@@ -62,7 +62,6 @@ MODULE_LICENSE("GPLv2");
 #define DT2W_DEBUG		0
 #define DT2W_DEFAULT		0
 
-#define DT2W_PWRKEY_DUR		0
 #define DT2W_FEATHER		200
 #define DT2W_TIME		200
 
@@ -72,22 +71,12 @@ static cputime64_t tap_time_pre = 0;
 static int touch_x = 0, touch_y = 0, touch_nr = 0, x_pre = 0, y_pre = 0;
 static bool touch_x_called = false, touch_y_called = false, touch_cnt = true;
 static bool exec_count = true;
+static bool scr_suspended = false;
 
-// To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
-bool scr_suspended = false;
-bool dt2w_suspend_enter = false;
-cputime64_t dt2w_suspend_exit_time = 0;
-bool dt2w_suspend_calulated = false;
-EXPORT_SYMBOL(scr_suspended);
-EXPORT_SYMBOL(dt2w_suspend_enter);
-EXPORT_SYMBOL(dt2w_suspend_exit_time);
-EXPORT_SYMBOL(dt2w_suspend_calulated);
-
-/* // To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
 #ifndef CONFIG_HAS_EARLYSUSPEND
 static struct notifier_block dt2w_lcd_notif;
 #endif
-*/
+
 static struct input_dev * doubletap2wake_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
 static struct workqueue_struct *dt2w_input_wq;
@@ -124,10 +113,8 @@ static void doubletap2wake_presspwr(struct work_struct * doubletap2wake_presspwr
                 return;
 	input_event(doubletap2wake_pwrdev, EV_KEY, KEY_POWER, 1);
 	input_event(doubletap2wake_pwrdev, EV_SYN, 0, 0);
-	msleep(DT2W_PWRKEY_DUR);
 	input_event(doubletap2wake_pwrdev, EV_KEY, KEY_POWER, 0);
 	input_event(doubletap2wake_pwrdev, EV_SYN, 0, 0);
-	msleep(DT2W_PWRKEY_DUR);
         mutex_unlock(&pwrkeyworklock);
 	return;
 }
@@ -162,22 +149,11 @@ static void detect_doubletap2wake(int x, int y)
 #if DT2W_DEBUG
         pr_info(LOGTAG"x,y(%4d,%4d)\n", x, y);
 #endif
-	if ((dt2w_switch > 0) && (exec_count) && (touch_cnt)) {
+	if ((exec_count) && (touch_cnt)) {
 		touch_cnt = false;
 		// Make enable to set touch counts (Max : 10) - by jollaman999
 		if (touch_nr == dt2w_switch - 1) {
 			new_touch(x, y);
-			// To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
-			if (dt2w_suspend_enter && dt2w_suspend_calulated) {
-				// Make enable to set touch counts (Max : 10) - by jollaman999
-				if ((ktime_to_ms(ktime_get()) - dt2w_suspend_exit_time) < (DT2W_TIME/2*(dt2w_switch+1))) {
-					touch_nr++;
-#if DT2W_DEBUG
-					pr_info("[jolla-dt2w_debug] touch_nr++ from dt2w suspend enter!!\n");
-					pr_info("[jolla-dt2w_debug] touch_nr = %d\n", touch_nr);
-#endif
-				}
-			}
 		// Make enable to set touch counts (Max : 10) - by jollaman999
 		} else if (touch_nr >= 1 && touch_nr <= dt2w_switch) {
 			if ((calc_feather(x, x_pre) < DT2W_FEATHER) &&
@@ -185,17 +161,9 @@ static void detect_doubletap2wake(int x, int y)
 			    // Make enable to set touch counts (Max : 10) - by jollaman999
 			    ((ktime_to_ms(ktime_get()) - tap_time_pre) < (DT2W_TIME/2*(dt2w_switch+1)))) {
 				touch_nr++;
-#if DT2W_DEBUG
-				pr_info("[jolla-dt2w_debug] touch_nr++ from dt2w suspend exit!!\n");
-				pr_info("[jolla-dt2w_debug] touch_nr = %d\n", touch_nr);
-#endif
 			} else {
 				doubletap2wake_reset();
 				new_touch(x, y);
-#if DT2W_DEBUG
-				pr_info("[jolla-dt2w_debug] dt2w reseted!!\n");
-				pr_info("[jolla-dt2w_debug] touch_nr = %d\n", touch_nr);
-#endif
 			}
 		} else {
 			doubletap2wake_reset();
@@ -209,9 +177,6 @@ static void detect_doubletap2wake(int x, int y)
 			doubletap2wake_reset();
 		}
 	}
-	// To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
-	dt2w_suspend_enter = false;
-	dt2w_suspend_calulated = false;
 }
 
 static void dt2w_input_callback(struct work_struct *unused) {
@@ -230,27 +195,33 @@ static void dt2w_input_event(struct input_handle *handle, unsigned int type,
 		(code==ABS_MT_TRACKING_ID) ? "ID" :
 		"undef"), code, value);
 #endif
-	if (!scr_suspended)
+
+	if ((!scr_suspended) || (!dt2w_switch))
 		return;
 
-	if (code == ABS_MT_SLOT) {
-		doubletap2wake_reset();
-		return;
-	}
+	switch(code) {
+		case ABS_MT_SLOT:
+			doubletap2wake_reset();
+			return;
 
-	if (code == ABS_MT_TRACKING_ID && value == -1) {
-		touch_cnt = true;
-		return;
-	}
+		case ABS_MT_TRACKING_ID:
+			if (value == -1) {
+				touch_cnt = true;
+				return;
+			} else
+				break;
+		case ABS_MT_POSITION_X:
+			touch_x = value;
+			touch_x_called = true;
+			break;
 
-	if (code == ABS_MT_POSITION_X) {
-		touch_x = value;
-		touch_x_called = true;
-	}
+		case ABS_MT_POSITION_Y:
+			touch_y = value;
+			touch_y_called = true;
+			break;
 
-	if (code == ABS_MT_POSITION_Y) {
-		touch_y = value;
-		touch_y_called = true;
+		default:
+			break;
 	}
 
 	if (touch_x_called || touch_y_called) {
@@ -319,7 +290,6 @@ static struct input_handler dt2w_input_handler = {
 	.id_table	= dt2w_ids,
 };
 
-/* // To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
 #ifndef CONFIG_HAS_EARLYSUSPEND
 static int lcd_notifier_callback(struct notifier_block *this,
 				unsigned long event, void *data)
@@ -349,7 +319,6 @@ static struct early_suspend dt2w_early_suspend_handler = {
 	.resume = dt2w_late_resume,
 };
 #endif
-*/
 
 /*
  * SYSFS stuff below here
@@ -437,7 +406,6 @@ static int __init doubletap2wake_init(void)
 	if (rc)
 		pr_err("%s: Failed to register dt2w_input_handler\n", __func__);
 
-/* // To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
 #ifndef CONFIG_HAS_EARLYSUSPEND
 	dt2w_lcd_notif.notifier_call = lcd_notifier_callback;
 	if (lcd_register_client(&dt2w_lcd_notif) != 0) {
@@ -446,8 +414,6 @@ static int __init doubletap2wake_init(void)
 #else
 	register_early_suspend(&dt2w_early_suspend_handler);
 #endif
-*/
-
 #ifndef ANDROID_TOUCH_DECLARED
 	android_touch_kobj = kobject_create_and_add("android_touch", NULL) ;
 	if (android_touch_kobj == NULL) {
@@ -476,11 +442,9 @@ static void __exit doubletap2wake_exit(void)
 #ifndef ANDROID_TOUCH_DECLARED
 	kobject_del(android_touch_kobj);
 #endif
-/* // To prevent doubletap2wake 3 taps issue when suspended. - by jollaman999
 #ifndef CONFIG_HAS_EARLYSUSPEND
 	lcd_unregister_client(&dt2w_lcd_notif);
 #endif
-*/
 	input_unregister_handler(&dt2w_input_handler);
 	destroy_workqueue(dt2w_input_wq);
 	input_unregister_device(doubletap2wake_pwrdev);
