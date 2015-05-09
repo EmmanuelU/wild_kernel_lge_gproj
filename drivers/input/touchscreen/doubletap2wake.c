@@ -74,7 +74,6 @@ EXPORT_SYMBOL(dt2w_msm_pm_enter);
 
 static struct input_dev * doubletap2wake_pwrdev;
 static DEFINE_MUTEX(pwrkeyworklock);
-static DEFINE_SPINLOCK(dt2w_slock);
 static struct workqueue_struct *dt2w_input_wq;
 static struct work_struct dt2w_input_work;
 
@@ -141,8 +140,6 @@ static void new_touch(int x, int y) {
 /* Doubletap2wake main function */
 static void detect_doubletap2wake(int x, int y)
 {
-	unsigned long flags;
-
 #if DT2W_DEBUG
         pr_info(LOGTAG"x,y(%4d,%4d)\n", x, y);
 #endif
@@ -150,9 +147,9 @@ static void detect_doubletap2wake(int x, int y)
 	if (!scr_suspended)
 		return;
 
-	spin_lock_irqsave(&dt2w_slock, flags);
 	if (!is_touching) {
 		is_touching = true;
+
 		// Make enable to set touch counts (Max : 10) - by jollaman999
 		if (touch_nr == 0) {
 			new_touch(x, y);
@@ -180,7 +177,6 @@ static void detect_doubletap2wake(int x, int y)
 			doubletap2wake_reset();
 		}
 	}
-	spin_unlock_irqrestore(&dt2w_slock, flags);
 }
 
 static void dt2w_input_callback(struct work_struct *unused) {
