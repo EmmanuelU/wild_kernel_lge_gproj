@@ -11,14 +11,12 @@
  * GNU General Public License for more details.
  */
 
-#define pr_fmt(fmt) "CPU-boost: " fmt
+#define pr_fmt(fmt) "CPU-iboost: " fmt
 
 #include <linux/cpu.h>
 #include <linux/cpufreq.h>
-#include <linux/earlysuspend.h>
 #include <linux/input.h>
 #include <linux/module.h>
-#include <linux/moduleparam.h>
 #include <linux/notifier.h>
 #include <linux/slab.h>
 
@@ -27,178 +25,118 @@ enum boost_status {
 	BOOST,
 };
 
-enum boost_pwr {
-	LOW,
-	MID,
-	HIGH,
-};
-
 struct boost_policy {
 	enum boost_status boost_state;
+	struct delayed_work restore_work;
+	unsigned int cpu;
 };
 
 static DEFINE_PER_CPU(struct boost_policy, boost_info);
 static struct workqueue_struct *boost_wq;
 static struct work_struct boost_work;
-static struct delayed_work restore_work;
+static struct mutex input_hndlr_mutex;
 
 static bool boost_running;
-static bool suspended;
+static bool freqs_available __read_mostly;
+static unsigned int boost_freq[3] __read_mostly;
+static unsigned int boost_ms[3];
+static unsigned int enabled __read_mostly;
+static unsigned int user_minfreq;
 
-#define NUM_CPUS CONFIG_NR_CPUS
-
-/**
- * Auto boost freq calculation:
- * Requested boost freqs = maxfreq * boost_factor[i] / BOOST_FACTOR_DIVISOR,
- * so the lowest boost freq in this case would be maxfreq * 3 / 7
- */
-static unsigned int boost_freq[3];
-static unsigned int boost_factor[3] = {3, 4, 5};
-#define BOOST_FACTOR_DIVISOR 7
-
-/* Boost-freq level to use (high, mid, low) */
-static enum boost_pwr boost_level;
-
-/* Boost duration in millsecs */
-static unsigned int boost_ms;
-
-/* On/off switch */
-static unsigned int enabled;
-module_param(enabled, uint, 0644);
-
-/**
- * Percentage threshold used to boost CPUs (default 30%). A higher
- * value will cause more CPUs to be boosted -- CPUs are boosted
- * when ((current_freq/max_freq) * 100) < up_threshold
- */
-static unsigned int up_threshold = 30;
-module_param(up_threshold, uint, 0644);
-
-static void cpu_unboost_all(void)
+static void cpu_boost(unsigned int nr_cpus)
 {
 	struct boost_policy *b;
 	unsigned int cpu;
 
-	get_online_cpus();
-	for_each_possible_cpu(cpu) {
+	for_each_online_cpu(cpu) {
 		b = &per_cpu(boost_info, cpu);
-		if (b->boost_state == BOOST) {
-			b->boost_state = UNBOOST;
-			if (cpu_online(cpu))
-				cpufreq_update_policy(cpu);
-		}
+		b->boost_state = BOOST;
+		cpufreq_update_policy(cpu);
+		if (cpu == (nr_cpus - 1))
+			return;
 	}
+}
+
+static void cpu_unboost(struct boost_policy *b)
+{
+	b->boost_state = UNBOOST;
+	get_online_cpus();
+	if (cpu_online(b->cpu))
+		cpufreq_update_policy(b->cpu);
 	put_online_cpus();
-	boost_running = false;
 }
 
 static void __cpuinit cpu_boost_main(struct work_struct *work)
 {
 	struct boost_policy *b;
-	struct cpufreq_policy *policy;
-	unsigned int cpu, num_cpus_boosted = 0, num_cpus_to_boost = 0;
+	unsigned int cpu, num_cpus_to_boost;
 
-	/* Num of CPUs to be boosted based on current freq of each online CPU */
 	get_online_cpus();
-	for_each_online_cpu(cpu) {
-		/* Only allow 2 CPUs to be staged for boosting from here */
-		if (num_cpus_to_boost < 2) {
-			policy = cpufreq_cpu_get(cpu);
-			if (policy != NULL) {
-				if ((policy->cur * 100 / policy->max) < up_threshold)
-					num_cpus_to_boost++;
-				cpufreq_cpu_put(policy);
-			}
-		}
-	}
+	num_cpus_to_boost = num_online_cpus() - 1;
+	if (!num_cpus_to_boost)
+		num_cpus_to_boost = 1;
 
-	/* Num of CPUs to be boosted based on how many of them are online */
-	switch (num_online_cpus() * 100 / NUM_CPUS) {
-	case 25:
-		num_cpus_to_boost += 2;
-		break;
-	case 50 ... 75:
-		num_cpus_to_boost++;
-		break;
-	}
+	/* Calculate boost duration for each CPU (CPU0 is boosted the longest) */
+	for (cpu = 0; cpu < num_cpus_to_boost; cpu++)
+		boost_ms[cpu] = 1650 - (cpu * 300) - (num_cpus_to_boost * 300);
 
-	/* Nothing to boost */
-	if (!num_cpus_to_boost) {
-		put_online_cpus();
-		boost_running = false;
-		return;
-	}
-
-	/* Boost freq to use based on how many CPUs to boost */
-	switch (num_cpus_to_boost * 100 / NUM_CPUS) {
-	case 25:
-		boost_level = HIGH;
-		break;
-	case 50:
-		boost_level = MID;
-		break;
-	default:
-		boost_level = LOW;
-	}
-
-	/* Dual-core systems need more power */
-	if (NUM_CPUS == 2)
-		boost_level++;
-
-	/* Calculate boost duration */
-	boost_ms = 3000 - ((num_cpus_to_boost * 750) + ((boost_level + 1) * 250));
-
-	/* Prioritize boosting of online CPUs */
-	for_each_online_cpu(cpu) {
-		b = &per_cpu(boost_info, cpu);
-		b->boost_state = BOOST;
-		cpufreq_update_policy(cpu);
-		num_cpus_boosted++;
-		if (num_cpus_boosted == num_cpus_to_boost)
-			goto finish_boost;
-	}
-
-	/* Boost offline CPUs if we still need to boost more CPUs */
-	for_each_possible_cpu(cpu) {
-		b = &per_cpu(boost_info, cpu);
-
-		/* Only boost CPUs that are not already boosted (offline CPUs) */
-		if (b->boost_state == UNBOOST) {
-			b->boost_state = BOOST;
-			num_cpus_boosted++;
-			if (num_cpus_boosted == num_cpus_to_boost)
-				goto finish_boost;
-		}
-	}
-
-finish_boost:
+	cpu_boost(num_cpus_to_boost);
 	put_online_cpus();
-	queue_delayed_work(boost_wq, &restore_work,
-				msecs_to_jiffies(boost_ms));
+
+	for (cpu = 0; cpu < num_cpus_to_boost; cpu++) {
+		b = &per_cpu(boost_info, cpu);
+		queue_delayed_work_on(0, boost_wq, &b->restore_work,
+					msecs_to_jiffies(boost_ms[cpu]));
+	}
 }
 
 static void __cpuinit cpu_restore_main(struct work_struct *work)
 {
-	cpu_unboost_all();
+	struct boost_policy *b = container_of(work, struct boost_policy,
+							restore_work.work);
+	cpu_unboost(b);
+
+	if (b->cpu)
+		return;
+
+	/* Boost is finished on all CPUs */
+	mutex_lock(&input_hndlr_mutex);
+	boost_running = false;
+	mutex_unlock(&input_hndlr_mutex);
 }
 
 static int cpu_do_boost(struct notifier_block *nb, unsigned long val, void *data)
 {
 	struct cpufreq_policy *policy = data;
 	struct boost_policy *b = &per_cpu(boost_info, policy->cpu);
+	unsigned int b_freq;
 
 	if (val != CPUFREQ_ADJUST)
 		return NOTIFY_OK;
+
+	if (policy->cpu > 2)
+		return NOTIFY_OK;
+
+	if (!freqs_available)
+		return NOTIFY_OK;
+
+	if (user_minfreq) {
+		policy->min = user_minfreq;
+		return NOTIFY_OK;
+	}
+
+	b_freq = boost_freq[policy->cpu];
 
 	switch (b->boost_state) {
 	case UNBOOST:
 		policy->min = policy->cpuinfo.min_freq;
 		break;
+
 	case BOOST:
-		if (boost_freq[boost_level] > policy->max)
+		if (b_freq > policy->max)
 			policy->min = policy->max;
 		else
-			policy->min = boost_freq[boost_level];
+			policy->min = b_freq;
 		break;
 	}
 
@@ -209,46 +147,21 @@ static struct notifier_block cpu_do_boost_nb = {
 	.notifier_call = cpu_do_boost,
 };
 
-static void cpu_boost_early_suspend(struct early_suspend *handler)
-{
-	struct boost_policy *b;
-	unsigned int cpu;
-
-	suspended = true;
-
-	for_each_possible_cpu(cpu) {
-		b = &per_cpu(boost_info, cpu);
-		if (cancel_delayed_work_sync(&restore_work))
-			cpu_unboost_all();
-	}
-}
-
-static void __cpuinit cpu_boost_late_resume(struct early_suspend *handler)
-{
-	suspended = false;
-}
-
-static struct early_suspend __refdata cpu_boost_early_suspend_handler = {
-	.level = EARLY_SUSPEND_LEVEL_BLANK_SCREEN,
-	.suspend = cpu_boost_early_suspend,
-	.resume = cpu_boost_late_resume,
-};
-
-static void cpu_boost_input_event(struct input_handle *handle, unsigned int type,
+static void cpu_iboost_input_event(struct input_handle *handle, unsigned int type,
 		unsigned int code, int value)
 {
-	if (boost_running)
-		return;
-	if (!enabled)
-		return;
-	if (suspended)
-		return;
+	mutex_lock(&input_hndlr_mutex);
+	if (boost_running || !enabled ||
+		!freqs_available || user_minfreq)
+		goto exit;
 
 	boost_running = true;
-	queue_work(boost_wq, &boost_work);
+	queue_work_on(0, boost_wq, &boost_work);
+exit:
+	mutex_unlock(&input_hndlr_mutex);
 }
 
-static int cpu_boost_input_connect(struct input_handler *handler,
+static int cpu_iboost_input_connect(struct input_handler *handler,
 		struct input_dev *dev, const struct input_device_id *id)
 {
 	struct input_handle *handle;
@@ -260,7 +173,7 @@ static int cpu_boost_input_connect(struct input_handler *handler,
 
 	handle->dev = dev;
 	handle->handler = handler;
-	handle->name = "cpu_input_boost";
+	handle->name = "cpu_iboost";
 
 	error = input_register_handle(handle);
 	if (error)
@@ -278,14 +191,14 @@ err2:
 	return error;
 }
 
-static void cpu_boost_input_disconnect(struct input_handle *handle)
+static void cpu_iboost_input_disconnect(struct input_handle *handle)
 {
 	input_close_device(handle);
 	input_unregister_handle(handle);
 	kfree(handle);
 }
 
-static const struct input_device_id cpu_boost_ids[] = {
+static const struct input_device_id cpu_iboost_ids[] = {
 	/* multi-touch touchscreen */
 	{
 		.flags = INPUT_DEVICE_ID_MATCH_EVBIT |
@@ -303,51 +216,130 @@ static const struct input_device_id cpu_boost_ids[] = {
 		.absbit = { [BIT_WORD(ABS_X)] =
 			BIT_MASK(ABS_X) | BIT_MASK(ABS_Y) },
 	},
-	/* keypad */
-	{
-		.flags = INPUT_DEVICE_ID_MATCH_EVBIT,
-		.evbit = { BIT_MASK(EV_KEY) },
-	},
 	{ },
 };
 
-static struct input_handler cpu_boost_input_handler = {
-	.event		= cpu_boost_input_event,
-	.connect	= cpu_boost_input_connect,
-	.disconnect	= cpu_boost_input_disconnect,
-	.name		= "cpu_input_boost",
-	.id_table	= cpu_boost_ids,
+static struct input_handler cpu_iboost_input_handler = {
+	.event		= cpu_iboost_input_event,
+	.connect	= cpu_iboost_input_connect,
+	.disconnect	= cpu_iboost_input_disconnect,
+	.name		= "cpu_iboost",
+	.id_table	= cpu_iboost_ids,
 };
 
-static int __init cpu_boost_init(void)
+/**************************** SYSFS START ****************************/
+static struct kobject *cpu_iboost_kobject;
+
+static ssize_t boost_freqs_write(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
 {
-	struct cpufreq_frequency_table *table = cpufreq_frequency_get_table(0);
-	int maxfreq = cpufreq_quick_get_max(0);
-	int b_level = 0, req_freq[3];
-	int curr, prev, i, ret = 1;
+	unsigned int freq[3], i = 0;
+	int ret = sscanf(buf, "%u %u %u", &freq[0], &freq[1], &freq[2]);
 
-	if (!maxfreq) {
-		pr_err("Failed to get max freq, input boost disabled\n");
-		goto err;
-	}
+	if (ret != 3)
+		return -EINVAL;
 
-	for (i = 0; i < 3; i++)
-		req_freq[i] = maxfreq * boost_factor[i] / BOOST_FACTOR_DIVISOR;
+	if (!freq[0] || !freq[1] || !freq[2])
+		return -EINVAL;
 
-	for (i = 0;; i++) {
-		curr = table[i].frequency - req_freq[b_level];
-		prev = table[i ? i - 1 : 0].frequency - req_freq[b_level];
+	/* Freq order should be [high, mid, low], so always order it like that */
+	boost_freq[0] = max3(freq[0], freq[1], freq[2]);
+	boost_freq[2] = min3(freq[0], freq[1], freq[2]);
 
-		if (!curr || (curr > 0 && prev < 0)) {
-			boost_freq[b_level] = table[i].frequency;
-			b_level++;
-		}
-
-		if (b_level == 3)
+	while (++i) {
+		if ((freq[i] == boost_freq[0]) ||
+			(freq[i] == boost_freq[2])) {
+			freq[i] = 0;
+			i = 0;
+		} else if (freq[i]) {
+			boost_freq[1] = freq[i];
 			break;
+		}
 	}
 
-	boost_wq = alloc_workqueue("cpu_input_boost_wq", WQ_HIGHPRI | WQ_NON_REENTRANT, 0);
+	freqs_available = true;
+
+	return size;
+}
+
+static ssize_t enabled_write(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	unsigned int data;
+	int ret = sscanf(buf, "%u", &data);
+
+	if (ret != 1)
+		return -EINVAL;
+
+	enabled = data;
+
+	return size;
+}
+
+static ssize_t userspace_minfreq_write(struct device *dev,
+		struct device_attribute *attr, const char *buf, size_t size)
+{
+	struct boost_policy *b;
+	unsigned int data, cpu;
+	int ret = sscanf(buf, "%u", &data);
+
+	if (ret != 1)
+		return -EINVAL;
+
+	user_minfreq = data;
+
+	for (cpu = 0; cpu < 3; cpu++) {
+		b = &per_cpu(boost_info, cpu);
+		cancel_delayed_work_sync(&b->restore_work);
+		queue_delayed_work_on(0, boost_wq, &b->restore_work, 0);
+	}
+
+	return size;
+}
+
+static ssize_t boost_freqs_read(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u %u %u\n", boost_freq[0], boost_freq[1], boost_freq[2]);
+}
+
+static ssize_t enabled_read(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", enabled);
+}
+
+static ssize_t userspace_minfreq_read(struct device *dev,
+		struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%u\n", user_minfreq);
+}
+
+static DEVICE_ATTR(boost_freqs, S_IRUGO | S_IWUGO,
+			boost_freqs_read, boost_freqs_write);
+static DEVICE_ATTR(enabled, S_IRUGO | S_IWUGO,
+			enabled_read, enabled_write);
+static DEVICE_ATTR(userspace_minfreq, S_IRUGO | S_IWUGO,
+			userspace_minfreq_read, userspace_minfreq_write);
+
+static struct attribute *cpu_iboost_attr[] = {
+	&dev_attr_boost_freqs.attr,
+	&dev_attr_enabled.attr,
+	&dev_attr_userspace_minfreq.attr,
+	NULL
+};
+
+static struct attribute_group cpu_iboost_attr_group = {
+	.attrs  = cpu_iboost_attr,
+};
+/**************************** SYSFS END ****************************/
+
+static int __init cpu_iboost_init(void)
+{
+	struct boost_policy *b;
+	int i, ret;
+
+	boost_wq = alloc_workqueue("cpu_iboost_wq", WQ_HIGHPRI, 0);
 	if (!boost_wq) {
 		pr_err("Failed to allocate workqueue\n");
 		ret = -EFAULT;
@@ -356,20 +348,37 @@ static int __init cpu_boost_init(void)
 
 	cpufreq_register_notifier(&cpu_do_boost_nb, CPUFREQ_POLICY_NOTIFIER);
 
-	INIT_DELAYED_WORK(&restore_work, cpu_restore_main);
+	for (i = 0; i < (CONFIG_NR_CPUS - 1); i++) {
+		b = &per_cpu(boost_info, i);
+		b->cpu = i;
+		INIT_DELAYED_WORK(&b->restore_work, cpu_restore_main);
+	}
+
 	INIT_WORK(&boost_work, cpu_boost_main);
 
-	ret = input_register_handler(&cpu_boost_input_handler);
+	mutex_init(&input_hndlr_mutex);
+
+	ret = input_register_handler(&cpu_iboost_input_handler);
 	if (ret) {
 		pr_err("Failed to register input handler, err: %d\n", ret);
 		goto err;
 	}
 
-	register_early_suspend(&cpu_boost_early_suspend_handler);
+	cpu_iboost_kobject = kobject_create_and_add("cpu_input_boost", kernel_kobj);
+	if (!cpu_iboost_kobject) {
+		pr_err("Failed to create kobject\n");
+		goto err;
+	}
+
+	ret = sysfs_create_group(cpu_iboost_kobject, &cpu_iboost_attr_group);
+	if (ret) {
+		pr_err("Failed to create sysfs interface\n");
+		kobject_put(cpu_iboost_kobject);
+	}
 err:
 	return ret;
 }
-late_initcall(cpu_boost_init);
+late_initcall(cpu_iboost_init);
 
 MODULE_AUTHOR("Sultanxda <sultanxda@gmail.com>");
 MODULE_DESCRIPTION("CPU Input Boost");
