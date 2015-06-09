@@ -52,7 +52,7 @@
  * towards the ideal frequency and slower after it has passed it. Similarly,
  * lowering the frequency towards the ideal frequency is faster than below it.
  */
-#define DEFAULT_AWAKE_IDEAL_FREQ CONFIG_SMARTASSV2_AWAKE_IDEAL_FREQ
+#define DEFAULT_AWAKE_IDEAL_FREQ 1134000
 static unsigned int awake_ideal_freq;
 
 /*
@@ -61,7 +61,7 @@ static unsigned int awake_ideal_freq;
  * that practically when sleep_ideal_freq==0 the awake_ideal_freq is used
  * also when suspended).
  */
-#define DEFAULT_SLEEP_IDEAL_FREQ CONFIG_SMARTASSV2_AWAKE_IDEAL_FREQ
+#define DEFAULT_SLEEP_IDEAL_FREQ 594000
 static unsigned int sleep_ideal_freq;
 
 /*
@@ -69,7 +69,7 @@ static unsigned int sleep_ideal_freq;
  * Zero disables and causes to always jump straight to max frequency.
  * When below the ideal freqeuncy we always ramp up to the ideal freq.
  */
-#define DEFAULT_RAMP_UP_STEP CONFIG_SMARTASSV2_RAMP_UP_STEP
+#define DEFAULT_RAMP_UP_STEP 128000
 static unsigned int ramp_up_step;
 
 /*
@@ -77,46 +77,46 @@ static unsigned int ramp_up_step;
  * Zero disables and will calculate ramp down according to load heuristic.
  * When above the ideal freqeuncy we always ramp down to the ideal freq.
  */
-#define DEFAULT_RAMP_DOWN_STEP CONFIG_SMARTASSV2_RAMP_DOWN_STEP
+#define DEFAULT_RAMP_DOWN_STEP 256000
 static unsigned int ramp_down_step;
 
 /*
  * CPU freq will be increased if measured load > max_cpu_load;
  */
-#define DEFAULT_MAX_CPU_LOAD CONFIG_SMARTASSV2_MAX_CPU_LOAD
+#define DEFAULT_MAX_CPU_LOAD 60
 static unsigned long max_cpu_load;
 
 /*
  * CPU freq will be decreased if measured load < min_cpu_load;
  */
-#define DEFAULT_MIN_CPU_LOAD CONFIG_SMARTASSV2_MIN_CPU_LOAD
+#define DEFAULT_MIN_CPU_LOAD 30
 static unsigned long min_cpu_load;
 
 /*
  * The minimum amount of time to spend at a frequency before we can ramp up.
  * Notice we ignore this when we are below the ideal frequency.
  */
-#define DEFAULT_UP_RATE_US CONFIG_SMARTASSV2_UP_RATE_US;
+#define DEFAULT_UP_RATE_US 50000
 static unsigned long up_rate_us;
 
 /*
  * The minimum amount of time to spend at a frequency before we can ramp down.
  * Notice we ignore this when we are above the ideal frequency.
  */
-#define DEFAULT_DOWN_RATE_US CONFIG_SMARTASSV2_DOWN_RATE_US;
+#define DEFAULT_DOWN_RATE_US 100000
 static unsigned long down_rate_us;
 
 /*
  * The frequency to set when waking up from sleep.
  * When sleep_ideal_freq=0 this will have no effect.
  */
-#define DEFAULT_SLEEP_WAKEUP_FREQ CONFIG_SMARTASSV2_SLEEP_WAKEUP_FREQ
+#define DEFAULT_SLEEP_WAKEUP_FREQ 0
 static unsigned int sleep_wakeup_freq;
 
 /*
  * Sampling rate, I highly recommend to leave it at 2.
  */
-#define DEFAULT_SAMPLE_RATE_JIFFIES CONFIG_SMARTASSV2_SAMPLE_RATE_JIFFIES
+#define DEFAULT_SAMPLE_RATE_JIFFIES 2
 static unsigned int sample_rate_jiffies;
 
 
@@ -748,6 +748,28 @@ static int cpufreq_governor_smartass(struct cpufreq_policy *new_policy,
 
 	return 0;
 }
+
+#ifdef CONFIG_HAS_EARLYSUSPEND
+static void smartass_early_suspend(struct early_suspend *handler) {
+	if (suspended || sleep_ideal_freq==0) /* disable behavior for sleep_ideal_freq==0 */
+		return;
+	suspended = 1;
+}
+
+static void smartass_late_resume(struct early_suspend *handler) {
+	if (!suspended) /* already not suspended so nothing to do */
+		return;
+	suspended = 0;
+}
+
+static struct early_suspend smartass_power_suspend = {
+	.suspend = smartass_early_suspend,
+	.resume = smartass_late_resume,
+#ifdef CONFIG_MACH_HERO
+        .level = EARLY_SUSPEND_LEVEL_DISABLE_FB + 1,
+#endif
+};
+#endif
 
 static int __init cpufreq_smartass_init(void)
 {
