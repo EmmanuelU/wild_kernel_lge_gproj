@@ -77,7 +77,7 @@ struct ip_cpu_info {
 
 static DEFINE_PER_CPU(struct ip_cpu_info, ip_info);
 
-static unsigned int screen_off_max = UINT_MAX;
+static unsigned int screen_off_max = 0;
 module_param(screen_off_max, uint, 0644);
 
 #define CAPACITY_RESERVE	50
@@ -352,7 +352,7 @@ static void screen_off_limit(bool on)
 	struct ip_cpu_info *l_ip_info;
 
 	/* not active, so exit */
-	if (screen_off_max == UINT_MAX)
+	if (screen_off_max == UINT_MAX || !screen_off_max)
 		return;
 
 	for_each_online_cpu(cpu) {
