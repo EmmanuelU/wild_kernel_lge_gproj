@@ -24,6 +24,7 @@
 enum boost_status {
 	UNBOOST,
 	BOOST,
+	IDLE,
 };
 
 struct boost_policy {
@@ -126,6 +127,7 @@ static int cpu_do_boost(struct notifier_block *nb, unsigned long val, void *data
 	switch (b->boost_state) {
 	case UNBOOST:
 		policy->min = userspace_minfreq[policy->cpu];
+		b->boost_state = IDLE;
 		break;
 
 	case BOOST:
@@ -134,6 +136,9 @@ static int cpu_do_boost(struct notifier_block *nb, unsigned long val, void *data
 			policy->min = policy->max;
 		else
 			policy->min = b_freq;
+		b->boost_state = IDLE;
+		break;
+	default:
 		break;
 	}
 
