@@ -2,6 +2,7 @@
  * Author: Paul Reioux aka Faux123 <reioux@gmail.com>
  *
  * Copyright 2012~2014 Paul Reioux
+ * Copyright 2015 Emmanuel Utomi <emmanuelutomi@gmail.com>
  *
  * This software is licensed under the terms of the GNU General Public
  * License version 2, as published by the Free Software Foundation, and
@@ -52,7 +53,7 @@ static struct delayed_work intelli_plug_boost;
 static struct workqueue_struct *intelliplug_wq;
 static struct workqueue_struct *intelliplug_boost_wq;
 
-static unsigned int intelli_plug_active = 0;
+static unsigned int intelli_plug_active = 1;
 module_param(intelli_plug_active, uint, 0644);
 
 static unsigned int touch_boost_active = 1;
@@ -161,6 +162,8 @@ static unsigned int nr_run_last;
 extern unsigned long avg_nr_running(void);
 extern unsigned long avg_cpu_nr_running(unsigned int cpu);
 
+static int plug_cpu(unsigned int cpu);
+
 static unsigned int calculate_thread_stats(void)
 {
 	unsigned int avg_nr_run = avg_nr_running();
@@ -207,7 +210,7 @@ static void __cpuinit intelli_plug_boost_fn(struct work_struct *work)
 	if (intelli_plug_active)
 		if (touch_boost_active)
 			if (nr_cpus < 2)
-				cpu_up(1);
+				plug_cpu(1);
 }
 
 /*
@@ -250,6 +253,15 @@ static void unplug_cpu(int min_active_cpu)
 	}
 }
 
+static int plug_cpu(unsigned int cpu)
+{
+	#ifdef CONFIG_CPU_TOGGLE
+	if(!cpu_enabled(cpu))
+		return -EBUSY;
+	#endif
+	return cpu_up(cpu);
+}
+
 static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 {
 	unsigned int nr_run_stat;
@@ -287,7 +299,7 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 					persist_count = DUAL_PERSISTENCE;
 				if (nr_cpus < 2) {
 					for (i = 1; i < cpu_count; i++)
-						cpu_up(i);
+						plug_cpu(i);
 				} else {
 					unplug_cpu(1);
 				}
@@ -300,7 +312,7 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 					persist_count = TRI_PERSISTENCE;
 				if (nr_cpus < 3) {
 					for (i = 1; i < cpu_count; i++)
-						cpu_up(i);
+						plug_cpu(i);
 				} else {
 					unplug_cpu(2);
 				}
@@ -313,7 +325,7 @@ static void __cpuinit intelli_plug_work_fn(struct work_struct *work)
 					persist_count = QUAD_PERSISTENCE;
 				if (nr_cpus < 4)
 					for (i = 1; i < cpu_count; i++)
-						cpu_up(i);
+						plug_cpu(i);
 #ifdef DEBUG_INTELLI_PLUG
 				pr_info("case 4: %u\n", persist_count);
 #endif
@@ -429,7 +441,7 @@ static void __cpuinit intelli_plug_resume(struct early_suspend *handler)
 		for_each_possible_cpu(cpu) {
 			if (cpu == 0)
 				continue;
-			cpu_up(cpu);
+			plug_cpu(cpu);
 		}
 
 		wakeup_boost();
