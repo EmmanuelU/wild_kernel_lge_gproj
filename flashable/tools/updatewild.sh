@@ -1,8 +1,8 @@
 #!/bin/sh
 #DO NOT EDIT FILE - AUTO GENERATED FOR e98x
-latestversion=2reloaded
-latestdate=150610
-latestdateliteral='June 10 2015'
+latestversion=3
+latestdate=150621
+latestdateliteral='June 21 2015'
 latestDL=http://forum.xda-developers.com/optimus-g-pro/orig-development/kernel-wildkernel-build-1-featurlicous-t3069629
 input="$1"
 if [[ -z "$input" ]]
