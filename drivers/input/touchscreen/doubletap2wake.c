@@ -66,6 +66,7 @@ int dt2w_switch = DT2W_DEFAULT;
 static cputime64_t tap_time_pre = 0;
 static int touch_x = 0, touch_y = 0, touch_nr = 0, x_pre = 0, y_pre = 0;
 static bool is_touching = false;
+static bool is_screen_on = false;
 static bool scr_suspended = false;
 
 // dt2w: 'touch_nr++' when 'msm_pm_enter' called - by jollaman999
@@ -95,6 +96,7 @@ __setup("dt2w=", read_dt2w_cmdline);
 
 /* reset on finger release */
 static void doubletap2wake_reset(void) {
+	is_screen_on = false;
 	touch_nr = 0;
 	tap_time_pre = 0;
 	x_pre = 0;
@@ -147,7 +149,7 @@ static void detect_doubletap2wake(int x, int y)
 	if (!scr_suspended)
 		return;
 
-	if (!is_touching) {
+	if ((!is_touching) && (!is_screen_on)) {
 		is_touching = true;
 
 		// Make enable to set touch counts (Max : 10) - by jollaman999
@@ -173,6 +175,7 @@ static void detect_doubletap2wake(int x, int y)
 		// Make enable to set touch counts (Max : 10) - by jollaman999
 		if ((touch_nr > dt2w_switch)) {
 			pr_info(LOGTAG"ON\n");
+			is_screen_on = true;
 			doubletap2wake_pwrtrigger();
 			doubletap2wake_reset();
 		}
