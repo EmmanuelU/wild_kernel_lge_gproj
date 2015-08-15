@@ -168,7 +168,7 @@ extern int cns_en;
 static struct hrtimer hr_touch_trigger_timer;
 #define MS_TO_NS(x)	(x * 1E6L)
 
-static bool has_suspended = false;
+static bool should_sleep = true;
 
 static enum hrtimer_restart touch_trigger_timer_handler(struct hrtimer *timer)
 {
@@ -3797,7 +3797,7 @@ static void touch_early_suspend(struct early_suspend *h)
 	if (prevent_sleep) {
 		enable_irq_wake(ts->client->irq);
 		release_all_ts_event(ts);
-		has_suspended = true;
+		should_sleep = false;
 	} else
 #endif
 	{
@@ -3814,6 +3814,7 @@ static void touch_early_suspend(struct early_suspend *h)
 		release_all_ts_event(ts);
 
 		touch_power_cntl(ts, ts->pdata->role->suspend_pwr);
+		should_sleep = true;
 	}
 
 	/* Disable hardware keys */
@@ -3852,7 +3853,7 @@ static void touch_late_resume(struct early_suspend *h)
 #endif
 
 #ifdef CONFIG_TOUCHSCREEN_PREVENT_SLEEP
-	if (prevent_sleep && has_suspended) {
+	if (prevent_sleep && !should_sleep) {
 		disable_irq_wake(ts->client->irq);
 	} else
 #endif

@@ -1,8 +1,8 @@
 #!/bin/sh
 #DO NOT EDIT FILE - AUTO GENERATED FOR f240
 latestversion=3
-latestdate=150812
-latestdateliteral='August 12 2015'
+latestdate=150815
+latestdateliteral='August 15 2015'
 latestDL=http://forum.xda-developers.com/optimus-g-pro/orig-development/kernel-wildkernel-build-1-featurlicous-t3069629
 input="$1"
 if [[ -z "$input" ]]
