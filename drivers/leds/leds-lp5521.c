@@ -117,7 +117,10 @@
 
 #define MAX_BLINK_TIME			60000	/* 60 sec */
 
-unsigned int blink_interval_on, blink_interval_off, blink_interval_rgb;
+static unsigned int blink_interval_on;
+static unsigned int blink_interval_off;
+static unsigned int blink_interval_rgb;
+static unsigned int force_pattern;
 
 enum lp5521_wait_type {
 	LP5521_CYCLE_INVALID,
@@ -721,6 +724,7 @@ static void lp5521_run_led_pattern(int mode, struct lp5521_chip *chip)
 		LP5521_INFO_MSG("[%s] PATTERN_PLAY_OFF", __func__);
 	} else {
 		ptn = lp5521_get_pattern(chip, mode);
+
 		if (!ptn)
 			return;
 
@@ -789,6 +793,25 @@ static ssize_t store_blink_rgb(struct device *dev, struct device_attribute *attr
 	if(ret == 1) blink_interval_rgb = rgb;
 	else blink_interval_rgb = 0;
 		
+	return len;
+}
+
+static ssize_t show_force_pattern(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf,"%u\n", force_pattern);
+}
+
+static ssize_t store_force_pattern(struct device *dev, struct device_attribute *attr, const char *buf, size_t len)
+{
+	unsigned int mode;
+
+	int ret = sscanf(buf, "%u\n", &mode);
+
+	if ((ret == 1) && mode)
+		force_pattern = mode;
+	else
+		force_pattern = 0;
+
 	return len;
 }
 
@@ -939,34 +962,44 @@ static ssize_t store_led_blink(struct device *dev,
 	if (!rgb || !on || !off) {
 		chip->id_pattern_play = PATTERN_OFF;
 		return len;
+	}
+
+	chip->id_pattern_play = PATTERN_BLINK_ON;
+
+	if (force_pattern) {
+		if (force_pattern > chip->pdata->num_patterns || !(chip->pdata->patterns)) {
+			force_pattern = 0;
+		}
+		else lp5521_run_led_pattern(force_pattern, chip);
 	} else {
-		if(blink_interval_on && blink_interval_off){
+		if (blink_interval_on && blink_interval_off) {
 			on = blink_interval_on;
 			off = blink_interval_off;
 		}
-		if(blink_interval_rgb) rgb = blink_interval_rgb;
-		chip->id_pattern_play = PATTERN_BLINK_ON;
+
+		if (blink_interval_rgb)
+			rgb = blink_interval_rgb;
+
+		/* on */
+		_set_pwm_cmd(&cmd, rgb);
+		_set_wait_cmd(&cmd, on, jump_pc);
+		jump_pc = cmd.pc_r / 2; /* 16bit size program counter */
+
+		/* off */
+		_set_pwm_cmd(&cmd, 0);
+		_set_wait_cmd(&cmd, off, jump_pc);
+
+		ptn.r = cmd.r;
+		ptn.size_r = cmd.pc_r;
+		ptn.g = cmd.g;
+		ptn.size_g = cmd.pc_g;
+		ptn.b = cmd.b;
+		ptn.size_b = cmd.pc_b;
+
+		WARN_ON(_is_pc_overflow(&ptn));
+
+		_run_led_pattern(chip, &ptn);
 	}
-
-	/* on */
-	_set_pwm_cmd(&cmd, rgb);
-	_set_wait_cmd(&cmd, on, jump_pc);
-	jump_pc = cmd.pc_r / 2; /* 16bit size program counter */
-
-	/* off */
-	_set_pwm_cmd(&cmd, 0);
-	_set_wait_cmd(&cmd, off, jump_pc);
-
-	ptn.r = cmd.r;
-	ptn.size_r = cmd.pc_r;
-	ptn.g = cmd.g;
-	ptn.size_g = cmd.pc_g;
-	ptn.b = cmd.b;
-	ptn.size_b = cmd.pc_b;
-
-	WARN_ON(_is_pc_overflow(&ptn));
-
-	_run_led_pattern(chip, &ptn);
 
 	return len;
 }
@@ -1001,6 +1034,7 @@ static DEVICE_ATTR(led_blink, S_IRUGO | S_IWUSR, NULL, store_led_blink);
 static DEVICE_ATTR(led_current_index, S_IRUGO | S_IWUSR, show_led_current_index, store_led_current_index);
 static DEVICE_ATTR(led_blink_interval, S_IRUGO | S_IWUSR, show_blink_interval, store_blink_interval);
 static DEVICE_ATTR(led_blink_rgb, S_IRUGO | S_IWUSR, show_blink_rgb, store_blink_rgb);
+static DEVICE_ATTR(led_force_pattern, S_IRUGO | S_IWUSR, show_force_pattern, store_force_pattern);
 
 
 static struct attribute *lp5521_attributes[] = {
@@ -1016,6 +1050,7 @@ static struct attribute *lp5521_attributes[] = {
 	&dev_attr_led_current_index.attr,
 	&dev_attr_led_blink_interval.attr,
 	&dev_attr_led_blink_rgb.attr,
+	&dev_attr_led_force_pattern.attr,
 	NULL
 };
 
