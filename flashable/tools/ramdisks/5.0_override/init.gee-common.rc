@@ -38,6 +38,8 @@ on init
     symlink /storage/emulated/legacy /mnt/sdcard
     symlink /storage/emulated/legacy /storage/sdcard0
     symlink /mnt/shell/emulated/0 /storage/emulated/legacy
+    symlink /storage/sdcard1 /external_sd
+    symlink /storage/sdcard1 /mnt/external_sd
 
     # Setup custom emergency number list based on
     # the MCC. This is needed by RIL.
