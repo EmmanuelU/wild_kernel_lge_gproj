@@ -6,7 +6,7 @@ fixed=
 dynamic=
 upload=
 
-kernelversion=5
+kernelversion=5reloaded
 device="f240"
 defconfig="wild_defconfig"
 ramdisk="5.0"
